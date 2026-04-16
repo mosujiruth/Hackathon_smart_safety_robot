@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>HazardBot Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0b0e13;
+    --surface: #111520;
+    --surface2: #161b26;
+    --border: rgba(255,255,255,0.07);
+    --border-bright: rgba(255,255,255,0.14);
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --hint: #3a3f4d;
+    --safe: #22c55e;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --info: #3b82f6;
+    --accent: #e55c3a;
+    --mono: 'Share Tech Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; height: 52px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 14px; }
+  .logo { display: flex; align-items: center; gap: 8px; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: var(--accent); display: flex; align-items: center; justify-content: center;
+  }
+  .logo-name { font-family: var(--mono); font-size: 15px; letter-spacing: 0.04em; color: var(--text); }
+  .divider { width: 1px; height: 20px; background: var(--border-bright); }
+  .status-pill { font-family: var(--mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.05em; }
+  .pill-alert { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+  .pill-ok { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.25); }
+  .topbar-right { display: flex; align-items: center; gap: 16px; }
+  .ws-indicator { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .ws-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .ws-dot.connected { background: var(--safe); animation: breathe 2s ease-in-out infinite; }
+  .ws-dot.disconnected { background: var(--danger); }
+  @keyframes breathe { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .clock { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  .layout { display: grid; grid-template-columns: 1fr 300px; height: calc(100vh - 52px); overflow: hidden; }
+  .main-panel { overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .side-panel { overflow-y: auto; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; }
+
+  .section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
+
+  .sensor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .sensor-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; cursor: default;
+    transition: border-color 0.2s; position: relative; overflow: hidden;
+  }
+  .sensor-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 12px 12px 0 0; }
+  .sensor-card.safe::before { background: var(--safe); opacity: 0.8; }
+  .sensor-card.warning::before { background: var(--warn); }
+  .sensor-card.danger::before { background: var(--danger); }
+  .sensor-card.danger { border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.04); }
+  .sensor-card.warning { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.04); }
+
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .card-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .icon-red { background: rgba(239,68,68,0.12); }
+  .icon-amber { background: rgba(245,158,11,0.12); }
+  .icon-blue { background: rgba(59,130,246,0.12); }
+  .icon-purple { background: rgba(139,92,246,0.12); }
+
+  .card-badge { font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 20px; letter-spacing: 0.05em; }
+  .badge-safe { background: rgba(34,197,94,0.12); color: #86efac; }
+  .badge-warn { background: rgba(245,158,11,0.12); color: #fde68a; }
+  .badge-danger { background: rgba(239,68,68,0.12); color: #fca5a5; animation: flashbadge 1s ease-in-out infinite; }
+  @keyframes flashbadge { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  .card-name { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .card-value { font-family: var(--mono); font-size: 28px; font-weight: 400; line-height: 1; color: var(--text); }
+  .card-value.danger-text { color: #fca5a5; }
+  .card-value.warn-text { color: #fde68a; }
+  .card-unit { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .progress-track { height: 3px; background: var(--hint); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+  .progress-fill { height: 3px; border-radius: 2px; transition: width 0.6s ease; }
+  .fill-safe { background: var(--safe); }
+  .fill-warn { background: var(--warn); }
+  .fill-danger { background: var(--danger); }
+  .threshold-label { display: flex; justify-content: space-between; margin-top: 5px; }
+  .threshold-label span { font-family: var(--mono); font-size: 10px; color: var(--hint); }
+
+  .cam-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .cam-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .cam-header-left { display: flex; align-items: center; gap: 8px; }
+  .cam-title { font-size: 13px; font-weight: 500; }
+  .rec-badge { font-family: var(--mono); font-size: 10px; display: flex; align-items: center; gap: 5px; color: #fca5a5; }
+  .rec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); animation: breathe 1s ease-in-out infinite; }
+  .cam-screen { background: #080a0e; height: 160px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .cam-grid {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .cam-reticle { position: relative; z-index: 2; }
+  .cam-reticle svg { opacity: 0.2; }
+  .cam-meta { position: absolute; bottom: 8px; left: 12px; right: 12px; display: flex; justify-content: space-between; z-index: 2; font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,0.3); }
+  .cam-footer { padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); }
+  .cam-footer span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .cam-stream-url { font-family: var(--mono); font-size: 10px; color: var(--hint); }
+
+  .pump-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .pump-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .pump-title { font-size: 13px; font-weight: 500; }
+  .pump-status { font-family: var(--mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; }
+  .pump-standby { background: var(--hint); color: var(--muted); }
+  .pump-active { background: rgba(34,197,94,0.15); color: #86efac; animation: breathe 0.8s infinite; }
+  .pump-desc { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 12px; }
+  .pump-btn {
+    width: 100%; padding: 9px; font-family: var(--mono); font-size: 12px;
+    letter-spacing: 0.05em; border-radius: 8px; border: 1px solid var(--border-bright);
+    background: transparent; color: var(--text); cursor: pointer; transition: all 0.15s;
+  }
+  .pump-btn:hover { background: var(--surface2); border-color: rgba(255,255,255,0.2); }
+  .pump-btn.pumping { border-color: rgba(34,197,94,0.4); color: #86efac; background: rgba(34,197,94,0.08); }
+
+  .stats-bar { border-radius: 12px; margin-top: 0; border-top: 1px solid var(--border); padding: 12px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: var(--surface); }
+  .stat { text-align: center; }
+  .stat-val { font-family: var(--mono); font-size: 20px; color: var(--text); }
+  .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .side-header { padding: 16px; border-bottom: 1px solid var(--border); }
+  .side-header h2 { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .side-header p { font-size: 11px; color: var(--muted); }
+  .alert-feed { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .alert-item { border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); background: var(--surface2); border-left-width: 3px; animation: slideIn 0.3s ease; }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+  .alert-item.crit { border-left-color: var(--danger); }
+  .alert-item.warn { border-left-color: var(--warn); }
+  .alert-item.info { border-left-color: var(--info); }
+  .alert-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .alert-type { font-size: 12px; font-weight: 500; }
+  .alert-time { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .alert-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+
+  .quick-actions { padding: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+  .quick-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--hint); text-transform: uppercase; margin-bottom: 4px; }
+  .quick-btn { width: 100%; text-align: left; padding: 9px 12px; font-size: 12px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; }
+  .quick-btn:hover { background: var(--surface2); border-color: var(--border-bright); color: var(--text); }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--surface2); border: 1px solid var(--border-bright); border-radius: 8px; padding: 10px 18px; font-family: var(--mono); font-size: 12px; color: var(--text); z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--hint); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M8 2L14 5.5v5L8 14 2 10.5v-5L8 2z" stroke="white" stroke-width="1.3" fill="none"/>
+          <circle cx="8" cy="8" r="2" fill="white"/>
+        </svg>
+      </div>
+      <span class="logo-name">HAZARDBOT</span>
+    </div>
+    <div class="divider"></div>
+    <span class="status-pill pill-alert" id="global-status">1 ALERT ACTIVE</span>
+  </div>
+  <div class="topbar-right">
+    <div class="ws-indicator">
+      <div class="ws-dot connected" id="ws-dot"></div>
+      <span id="ws-label">SIMULATING</span>
+    </div>
+    <div class="divider"></div>
+    <span class="clock" id="clock">--:--:--</span>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="main-panel">
+
+    <div>
+      <div class="section-label">Live sensor readings</div>
+      <div class="sensor-grid">
+
+        <div class="sensor-card warning" id="card-gas">
+          <div class="card-header">
+            <div class="card-icon icon-amber">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <circle cx="9" cy="9" r="4.5" stroke="#f59e0b" stroke-width="1.4"/>
+                <path d="M9 2.5V1.5M9 16.5v-1M2.5 9H1.5M16.5 9h-1M4 4l-.7-.7M14.7 14.7l-.7-.7M14 4l.7-.7M3.3 14.7l.7-.7" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span class="card-badge badge-warn" id="badge-gas">WARN</span>
+          </div>
+          <div class="card-name">Gas / air quality</div>
+          <div class="card-value warn-text" id="val-gas">342</div>
+          <div class="card-unit">ppm</div>
+          <div class="progress-track"><div class="progress-fill fill-warn" id="bar-gas" style="width:68%"></div></div>
+          <div class="threshold-label"><span id="pct-gas">68%</span><span>threshold 300 ppm</span></div>
+        </div>
+
+        <div class="sensor-card danger" id="card-heat">
+          <div class="card-header">
+            <div class="card-icon icon-red">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M9 16c-2.5 0-4.5-2-4.5-4.5 0-1.7.9-3.1 2.25-3.9V5a2.25 2.25 0 114.5 0v2.6C12.6 8.4 13.5 9.8 13.5 11.5 13.5 14 11.5 16 9 16z" stroke="#ef4444" stroke-width="1.3" fill="none"/>
+                <circle cx="9" cy="11.5" r="1.5" fill="#ef4444"/>
+              </svg>
+            </div>
+            <span class="card-badge badge-danger" id="badge-heat">CRITICAL</span>
+          </div>
+          <div class="card-name">Heat sensor</div>
+          <div class="card-value danger-text" id="val-heat">87</div>
+          <div class="card-unit">°C</div>
+          <div class="progress-track"><div class="progress-fill fill-danger" id="bar-heat" style="width:87%"></div></div>
+          <div class="threshold-label"><span id="pct-heat">87%</span><span>threshold 60°C</span></div>
+        </div>
+
+        <div class="sensor-card safe" id="card-sound">
+          <div class="card-header">
+            <div class="card-icon icon-blue">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M7 6H5a1 1 0 00-1 1v4a1 1 0 001 1h2l4 3V3L7 6z" stroke="#3b82f6" stroke-width="1.3" fill="none"/>
+                <path d="M13 6.5c.9.8 1.5 1.9 1.5 2.5s-.6 1.7-1.5 2.5" stroke="#3b82f6" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span class="card-badge badge-safe" id="badge-sound">SAFE</span>
+          </div>
+          <div class="card-name">Sound sensor</div>
+          <div class="card-value" id="val-sound">38</div>
+          <div class="card-unit">dB</div>
+          <div class="progress-track"><div class="progress-fill fill-safe" id="bar-sound" style="width:38%"></div></div>
+          <div class="threshold-label"><span id="pct-sound">38%</span><span>threshold 80 dB</span></div>
+        </div>
+
+        <div class="sensor-card safe" id="card-smoke">
+          <div class="card-header">
+            <div class="card-icon icon-purple">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M4 14c1.2-2.4 1.2-3.6 0-6 2.4 0 3.6 1.2 3.6 3C7.6 8.6 9 7 10 5.5c0 3.6 2.4 3.6 2.4 6.6" stroke="#8b5cf6" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+                <line x1="2.5" y1="15.5" x2="15.5" y2="15.5" stroke="#8b5cf6" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span class="card-badge badge-safe" id="badge-smoke">SAFE</span>
+          </div>
+          <div class="card-name">Smoke detector</div>
+          <div class="card-value" id="val-smoke">12</div>
+          <div class="card-unit">% obscuration</div>
+          <div class="progress-track"><div class="progress-fill fill-safe" id="bar-smoke" style="width:12%"></div></div>
+          <div class="threshold-label"><span id="pct-smoke">12%</span><span>threshold 25%</span></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">ESP32-CAM — live feed</div>
+      <div class="cam-card">
+        <div class="cam-header">
+          <div class="cam-header-left">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="3" width="12" height="8" rx="2" stroke="#6b7280" stroke-width="1.2" fill="none"/>
+              <circle cx="7" cy="7" r="2" stroke="#6b7280" stroke-width="1.2"/>
+            </svg>
+            <span class="cam-title">Camera feed</span>
+          </div>
+          <div class="rec-badge"><div class="rec-dot"></div>REC</div>
+        </div>
+        <div class="cam-screen">
+          <div class="cam-grid"></div>
+          <div class="cam-reticle">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <path d="M8 18V8h10M30 8h10v10M8 30v10h10M30 38h10V28" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="24" cy="24" r="4" stroke="white" stroke-width="1"/>
+              <line x1="24" y1="20" x2="24" y2="16" stroke="white" stroke-width="0.8" opacity="0.5"/>
+              <line x1="24" y1="28" x2="24" y2="32" stroke="white" stroke-width="0.8" opacity="0.5"/>
+              <line x1="20" y1="24" x2="16" y2="24" stroke="white" stroke-width="0.8" opacity="0.5"/>
+              <line x1="28" y1="24" x2="32" y2="24" stroke="white" stroke-width="0.8" opacity="0.5"/>
+            </svg>
+          </div>
+          <div class="cam-meta">
+            <span id="cam-ts">--:--:--</span>
+            <span>MJPEG · 640x480</span>
+          </div>
+        </div>
+        <div class="cam-footer">
+          <span id="cam-fps">-- fps</span>
+          <span class="cam-stream-url">ws://&lt;ESP32-IP&gt;:81/stream</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pump-card">
+      <div class="pump-row">
+        <span class="pump-title">Water pump control</span>
+        <span class="pump-status pump-standby" id="pump-status">STANDBY</span>
+      </div>
+      <p class="pump-desc">Auto-activates when fire is detected (heat &gt; 60°C + smoke &gt; 20%). Manual override below.</p>
+      <button class="pump-btn" id="pump-btn" onclick="togglePump()">ACTIVATE PUMP MANUALLY</button>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat"><div class="stat-val" id="stat-alerts">2</div><div class="stat-lbl">Active alerts</div></div>
+      <div class="stat"><div class="stat-val" id="stat-uptime">00:00:00</div><div class="stat-lbl">Uptime</div></div>
+      <div class="stat"><div class="stat-val">4</div><div class="stat-lbl">Sensors online</div></div>
+      <div class="stat"><div class="stat-val" id="stat-events">7</div><div class="stat-lbl">Events today</div></div>
+    </div>
+
+  </div>
+
+  <div class="side-panel">
+    <div class="side-header">
+      <h2>Alert feed</h2>
+      <p>Real-time incident log</p>
+    </div>
+    <div class="alert-feed" id="alert-feed">
+      <div class="alert-item crit">
+        <div class="alert-top"><span class="alert-type">Fire detected</span><span class="alert-time">2m ago</span></div>
+        <div class="alert-desc">Heat 87°C + smoke rising. Pump auto-triggered.</div>
+      </div>
+      <div class="alert-item warn">
+        <div class="alert-top"><span class="alert-type">Gas level high</span><span class="alert-time">5m ago</span></div>
+        <div class="alert-desc">Air quality at 342 ppm, above safe threshold.</div>
+      </div>
+      <div class="alert-item info">
+        <div class="alert-top"><span class="alert-type">Patrol started</span><span class="alert-time">11m ago</span></div>
+        <div class="alert-desc">Robot initiated Zone B sweep.</div>
+      </div>
+      <div class="alert-item info">
+        <div class="alert-top"><span class="alert-type">System online</span><span class="alert-time">16m ago</span></div>
+        <div class="alert-desc">WebSocket connected. All sensors initialised.</div>
+      </div>
+    </div>
+    <div class="quick-actions">
+      <div class="quick-label">Config</div>
+      <button class="quick-btn" onclick="showToast('Edit WS_URL in the script tag to your Node.js server IP')">
+        <span>WebSocket config</span><span style="font-size:11px;opacity:0.4">↗</span>
+      </button>
+      <button class="quick-btn" onclick="showToast('Replace ESP32-IP in cam-stream-url with your camera IP')">
+        <span>Camera stream config</span><span style="font-size:11px;opacity:0.4">↗</span>
+      </button>
+      <button class="quick-btn" onclick="showToast('Edit THRESHOLDS object in the script tag')">
+        <span>Edit thresholds</span><span style="font-size:11px;opacity:0.4">↗</span>
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  /* ════════════════════════════════
+     CONFIG — edit these for your setup
+  ════════════════════════════════ */
+  var WS_URL = 'ws://localhost:3000';
+  var THRESHOLDS = { gas: 300, heat: 60, sound: 80, smoke: 25 };
+  var MAX = { gas: 500, heat: 120, sound: 120, smoke: 100 };
+
+  /* ════════════════════════════════
+     STATE
+  ════════════════════════════════ */
+  var pumpOn = false;
+  var startTime = Date.now();
+  var ws = null;
+  var wsConnected = false;
+  var alertCount = 2;
+  var eventCount = 7;
+
+  /* ════════════════════════════════
+     WEBSOCKET
+  ════════════════════════════════ */
+  function connectWS() {
+    try {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = function () {
+        wsConnected = true;
+        setWS(true);
+        pushAlert('info', 'WebSocket connected', 'Dashboard linked to server.');
+      };
+      ws.onmessage = function (e) {
+        try {
+          var d = JSON.parse(e.data);
+          /* Expected JSON from ESP32 via Node.js:
+             { "gas": 342, "heat": 87, "sound": 38, "smoke": 12, "pump": false } */
+          if (d.gas   !== undefined) updateSensor('gas',   d.gas,   'ppm',           THRESHOLDS.gas,   MAX.gas);
+          if (d.heat  !== undefined) updateSensor('heat',  d.heat,  '°C',            THRESHOLDS.heat,  MAX.heat);
+          if (d.sound !== undefined) updateSensor('sound', d.sound, 'dB',            THRESHOLDS.sound, MAX.sound);
+          if (d.smoke !== undefined) updateSensor('smoke', d.smoke, '% obscuration', THRESHOLDS.smoke, MAX.smoke);
+          if (d.pump  !== undefined) setPump(d.pump);
+          checkAlerts(d);
+        } catch (err) { console.warn('WS parse error:', err); }
+      };
+      ws.onclose = function () { wsConnected = false; setWS(false); setTimeout(connectWS, 3000); };
+      ws.onerror = function () { wsConnected = false; setWS(false); };
+    } catch (err) { setWS(false); }
+  }
+
+  function setWS(ok) {
+    document.getElementById('ws-dot').className = 'ws-dot ' + (ok ? 'connected' : 'disconnected');
+    document.getElementById('ws-label').textContent = ok ? 'WS CONNECTED' : 'SIMULATING';
+  }
+
+  function sendWS(data) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
+  }
+
+  /* ════════════════════════════════
+     SENSOR UPDATE
+  ════════════════════════════════ */
+  function updateSensor(id, value, unit, threshold, max) {
+    var pct   = Math.min(100, Math.round((value / max) * 100));
+    var level = value >= threshold ? 'danger' : value >= threshold * 0.8 ? 'warning' : 'safe';
+    var fillCls  = level === 'safe' ? 'fill-safe' : level === 'warning' ? 'fill-warn' : 'fill-danger';
+    var textCls  = level === 'danger' ? 'danger-text' : level === 'warning' ? 'warn-text' : '';
+    var badgeCls = level === 'safe' ? 'badge-safe' : level === 'warning' ? 'badge-warn' : 'badge-danger';
+    var badgeTxt = level === 'safe' ? 'SAFE' : level === 'warning' ? 'WARN' : 'CRITICAL';
+
+    document.getElementById('card-' + id).className = 'sensor-card ' + level;
+    var valEl = document.getElementById('val-' + id);
+    valEl.textContent = Math.round(value);
+    valEl.className = 'card-value ' + textCls;
+    var bar = document.getElementById('bar-' + id);
+    bar.className = 'progress-fill ' + fillCls;
+    bar.style.width = pct + '%';
+    document.getElementById('pct-' + id).textContent = pct + '%';
+    var badge = document.getElementById('badge-' + id);
+    badge.className = 'card-badge ' + badgeCls;
+    badge.textContent = badgeTxt;
+  }
+
+  /* ════════════════════════════════
+     ALERT LOGIC
+  ════════════════════════════════ */
+  function checkAlerts(d) {
+    if (d.heat !== undefined && d.smoke !== undefined && d.heat > THRESHOLDS.heat && d.smoke > THRESHOLDS.smoke) {
+      pushAlert('crit', 'Fire detected', 'Heat ' + Math.round(d.heat) + '°C + smoke ' + Math.round(d.smoke) + '%. Pump triggered.');
+      setPump(true); sendWS({ command: 'pump', state: true });
+    } else if (d.gas !== undefined && d.gas > THRESHOLDS.gas) {
+      pushAlert('warn', 'Gas level high', 'Air quality at ' + Math.round(d.gas) + ' ppm.');
+    } else if (d.sound !== undefined && d.sound > THRESHOLDS.sound) {
+      pushAlert('crit', 'Distress detected', 'Sound spike at ' + Math.round(d.sound) + ' dB. Possible emergency.');
+    }
+  }
+
+  function pushAlert(type, title, desc) {
+    var feed = document.getElementById('alert-feed');
+    var item = document.createElement('div');
+    item.className = 'alert-item ' + type;
+    item.innerHTML =
+      '<div class="alert-top"><span class="alert-type">' + title + '</span><span class="alert-time">just now</span></div>' +
+      '<div class="alert-desc">' + desc + '</div>';
+    feed.insertBefore(item, feed.firstChild);
+    alertCount++;
+    eventCount++;
+    document.getElementById('stat-alerts').textContent = alertCount;
+    document.getElementById('stat-events').textContent = eventCount;
+    updateGlobalStatus();
+  }
+
+  function updateGlobalStatus() {
+    var el = document.getElementById('global-status');
+    el.className = 'status-pill ' + (alertCount > 0 ? 'pill-alert' : 'pill-ok');
+    el.textContent = alertCount > 0 ? alertCount + ' ALERT' + (alertCount > 1 ? 'S' : '') + ' ACTIVE' : 'ALL CLEAR';
+  }
+
+  /* ════════════════════════════════
+     PUMP
+  ════════════════════════════════ */
+  function togglePump() {
+    pumpOn = !pumpOn;
+    setPump(pumpOn);
+    sendWS({ command: 'pump', state: pumpOn });
+  }
+
+  function setPump(on) {
+    pumpOn = on;
+    document.getElementById('pump-btn').textContent = on ? 'DEACTIVATE PUMP' : 'ACTIVATE PUMP MANUALLY';
+    document.getElementById('pump-btn').className = 'pump-btn' + (on ? ' pumping' : '');
+    document.getElementById('pump-status').textContent = on ? 'ACTIVE' : 'STANDBY';
+    document.getElementById('pump-status').className = 'pump-status ' + (on ? 'pump-active' : 'pump-standby');
+  }
+
+  /* ════════════════════════════════
+     CLOCK, UPTIME, SIMULATION
+  ════════════════════════════════ */
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+  function tick() {
+    var now = new Date();
+    var ts = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    document.getElementById('clock').textContent = ts;
+    document.getElementById('cam-ts').textContent = ts;
+
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
+    var h = Math.floor(elapsed / 3600), m = Math.floor((elapsed % 3600) / 60), s = elapsed % 60;
+    document.getElementById('stat-uptime').textContent = pad(h) + ':' + pad(m) + ':' + pad(s);
+
+    if (!wsConnected) {
+      var t = Date.now();
+      updateSensor('gas',   330 + Math.round(Math.sin(t / 3000) * 20),  'ppm',           THRESHOLDS.gas,   MAX.gas);
+      updateSensor('heat',   84 + Math.round(Math.sin(t / 2000) * 5),   '°C',            THRESHOLDS.heat,  MAX.heat);
+      updateSensor('sound',  35 + Math.round(Math.random() * 10),        'dB',            THRESHOLDS.sound, MAX.sound);
+      updateSensor('smoke',  10 + Math.round(Math.sin(t / 4000) * 3),   '% obscuration', THRESHOLDS.smoke, MAX.smoke);
+      document.getElementById('cam-fps').textContent = (15 + Math.round(Math.random() * 5)) + ' fps';
+    }
+  }
+
+  /* ════════════════════════════════
+     TOAST
+  ════════════════════════════════ */
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 3000);
+  }
+
+  /* ════════════════════════════════
+     INIT
+  ════════════════════════════════ */
+  connectWS();
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>
